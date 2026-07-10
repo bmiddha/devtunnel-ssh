@@ -1,0 +1,11 @@
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="dtssh">
+  <title>dtssh</title>
+  <!-- rounded badge -->
+  <rect x="0" y="0" width="128" height="128" rx="28" fill="#1A1119"/>
+  <!-- tunnel mouth -->
+  <path d="M24 99V62a40 40 0 0 1 80 0v37" fill="none" stroke="#F06795" stroke-width="8" stroke-linecap="round"/>
+  <path d="M34 99V62a30 30 0 0 1 60 0v37" fill="none" stroke="#F8A5C2" stroke-width="4" stroke-linecap="round" opacity="0.6"/>
+  <!-- terminal prompt: >_ passing through the tunnel -->
+  <path d="M52 60l10 8-10 8" fill="none" stroke="#FDE7EF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M70 82h12" stroke="#FF8FB3" stroke-width="6" stroke-linecap="round"/>
+</svg>

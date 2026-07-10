@@ -1,0 +1,102 @@
+name: 🎉 release (publish)
+
+# Runs when a `chore(release): vX` pull request (label `release`) is merged into
+# the default branch. Tags the merge commit, builds every platform via
+# build.yml, and publishes the GitHub Release with changelog-based notes.
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    name: 🏷️ Tag release
+    # Only for merged release PRs.
+    if: >-
+      github.event.pull_request.merged == true &&
+      contains(github.event.pull_request.labels.*.name, 'release')
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.info.outputs.tag }}
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0
+
+      - name: 🏷️ Read version and create tag
+        id: info
+        run: |
+          set -euo pipefail
+          ver=$(grep -oP '<Version>\K[0-9]+\.[0-9]+\.[0-9]+(?=</Version>)' Dtssh.csproj)
+          tag="v$ver"
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "::error::tag $tag already exists"; exit 1
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$tag" -m "dtssh $tag"
+          git push origin "$tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: 🔨 Build binaries
+    needs: tag
+    uses: ./.github/workflows/build.yml
+    with:
+      ref: ${{ needs.tag.outputs.tag }}
+
+  release:
+    name: 🎉 Publish GitHub release
+    needs: [tag, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.tag.outputs.tag }}
+          fetch-depth: 0
+
+      - name: 🧰 Install git-cliff
+        uses: taiki-e/install-action@v2
+        with:
+          tool: git-cliff
+
+      - name: 📝 Generate release notes
+        run: |
+          set -euo pipefail
+          git cliff --config .config/cliff.toml --latest --strip all -o RELEASE_NOTES.md
+          echo "----- RELEASE_NOTES.md -----"
+          cat RELEASE_NOTES.md
+
+      - name: ⬇️ Download built binaries
+        uses: actions/download-artifact@v7
+        with:
+          pattern: dtssh-*
+          path: dist
+          merge-multiple: true
+
+      - name: 🔐 Generate checksums
+        working-directory: dist
+        run: |
+          set -euo pipefail
+          ls -la
+          sha256sum dtssh-* > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: 🎉 Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" \
+            dist/dtssh-* dist/SHA256SUMS.txt \
+            --title "dtssh $TAG" \
+            --notes-file RELEASE_NOTES.md \
+            ${{ contains(github.event.pull_request.labels.*.name, 'prerelease') && '--prerelease' || '' }}

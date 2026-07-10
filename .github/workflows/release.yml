@@ -1,0 +1,146 @@
+name: 🚀 release (prepare)
+
+# Manually-triggered: computes the next version (from Conventional Commits by
+# default), bumps Dtssh.csproj, regenerates CHANGELOG.md, and opens a
+# `chore(release): vX` pull request set to auto-merge (rebase). Once its required
+# checks pass it merges itself, triggering release-publish.yml, which tags,
+# builds, and publishes the GitHub Release.
+#
+# The release PR is opened with a GitHub App installation token (not the default
+# GITHUB_TOKEN), so the required checks (build.yml, conventional.yml) run
+# automatically instead of waiting for a manual "Approve workflows to run".
+# Configure a GitHub App (Contents: write, Pull requests: write) installed on
+# this repo, and add its App ID and private key as the repo secrets
+# RELEASE_APP_ID and RELEASE_APP_PRIVATE_KEY. Also enable "Allow auto-merge" in
+# the repository settings so the PR can merge itself once checks pass.
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "How to pick the next version (ignored if 'version' is set)."
+        type: choice
+        options: [auto, patch, minor, major]
+        default: auto
+      version:
+        description: "Explicit version to release, e.g. 1.4.0 (overrides 'bump')."
+        type: string
+        required: false
+        default: ""
+      prerelease:
+        description: "Mark the eventual GitHub release as a pre-release."
+        type: boolean
+        default: false
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  prepare:
+    name: 📝 Prepare release PR
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🔑 Mint GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - name: 📥 Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: 🧰 Install git-cliff
+        uses: taiki-e/install-action@v2
+        with:
+          tool: git-cliff
+
+      - name: 🔢 Compute next version
+        id: bump
+        run: |
+          set -euo pipefail
+          cur=$(grep -oP '<Version>\K[0-9]+\.[0-9]+\.[0-9]+(?=</Version>)' Dtssh.csproj)
+          echo "current version: $cur"
+          req="${{ inputs.version }}"
+          if [ -n "$req" ]; then
+            new="${req#v}"
+          elif [ "${{ inputs.bump }}" = "auto" ]; then
+            new="$(git cliff --config .config/cliff.toml --bumped-version 2>/dev/null | sed 's/^v//')"
+            if [ -z "$new" ]; then
+              echo "::error::git-cliff could not compute a bumped version"; exit 1
+            fi
+          else
+            IFS=. read -r MA MI PA <<< "$cur"
+            case "${{ inputs.bump }}" in
+              major) MA=$((MA+1)); MI=0; PA=0 ;;
+              minor) MI=$((MI+1)); PA=0 ;;
+              patch) PA=$((PA+1)) ;;
+            esac
+            new="$MA.$MI.$PA"
+          fi
+          if ! echo "$new" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::invalid version '$new' (expected MAJOR.MINOR.PATCH)"; exit 1
+          fi
+          tag="v$new"
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "::error::tag $tag already exists"; exit 1
+          fi
+          echo "version=$new" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "cur=$cur" >> "$GITHUB_ENV"
+          echo "new=$new" >> "$GITHUB_ENV"
+
+      - name: 📄 Apply version bump and regenerate changelog
+        run: |
+          set -euo pipefail
+          sed -i "s#<Version>$cur</Version>#<Version>$new</Version>#" Dtssh.csproj
+          grep -q "<Version>$new</Version>" Dtssh.csproj
+          git cliff --config .config/cliff.toml --tag "v$new" -o CHANGELOG.md
+          git cliff --config .config/cliff.toml --tag "v$new" --latest --strip all -o RELEASE_NOTES.md
+
+      - name: 🔀 Open release pull request
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          TAG: ${{ steps.bump.outputs.tag }}
+        run: |
+          set -euo pipefail
+          branch="release/$TAG"
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git commit -am "chore(release): $TAG"
+          git push --force-with-lease origin "$branch"
+
+          # Ensure the labels exist (ignore "already exists").
+          gh label create release --color 0e8a16 --description "Release PR" 2>/dev/null || true
+          gh label create prerelease --color fbca04 --description "Pre-release" 2>/dev/null || true
+
+          labels="release"
+          if [ "${{ inputs.prerelease }}" = "true" ]; then labels="release,prerelease"; fi
+
+          {
+            echo "Automated release for **$TAG**."
+            echo
+            echo "Merging this PR (rebase) tags \`$TAG\`, builds every platform, and"
+            echo "publishes the GitHub Release. Review the changelog below."
+            echo
+            echo "---"
+            echo
+            cat RELEASE_NOTES.md
+          } > pr-body.md
+
+          gh pr create --base "${{ github.ref_name }}" --head "$branch" \
+            --title "chore(release): $TAG" \
+            --body-file pr-body.md \
+            --label "$labels"
+
+          # Auto-merge (rebase) once all required checks pass. Requires
+          # "Allow auto-merge" enabled in the repo settings.
+          gh pr merge "$branch" --auto --rebase
