@@ -1,0 +1,11 @@
+<!--
+  The DevTunnels SSH libraries activate SSH "services" (e.g. PortForwardingService)
+  and crypto algorithms by reflection, looking up constructors by parameter type.
+  NativeAOT/trimming removes those constructors, causing runtime failures such as
+  "SSH service type 'PortForwardingService' must have a public constructor...".
+  Root both SSH assemblies so their reflected members are preserved.
+-->
+<linker>
+  <assembly fullname="Microsoft.DevTunnels.Ssh" preserve="all" />
+  <assembly fullname="Microsoft.DevTunnels.Ssh.Tcp" preserve="all" />
+</linker>

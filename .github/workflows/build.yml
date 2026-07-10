@@ -1,0 +1,78 @@
+name: 🔨 build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  # Reusable: the release workflow calls this to build the tagged commit.
+  workflow_call:
+    inputs:
+      ref:
+        description: Git ref (tag/branch/SHA) to build.
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: 🏗️ ${{ matrix.rid }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-22.04,     rid: linux-x64 }
+          - { os: ubuntu-22.04-arm, rid: linux-arm64 }
+          - { os: macos-15,         rid: osx-arm64 }
+          - { os: windows-2022,     rid: win-x64 }
+          - { os: windows-11-arm,   rid: win-arm64 }
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: ⚙️ Set up .NET 10 SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+
+      # The prebuilt Apple crypto PAL (libSystem.Security.Cryptography.Native.Apple.a)
+      # shipped in the .NET runtime pack force-loads Swift overlay symbols that older
+      # ld64/Swift libraries can't resolve; a recent Xcode links it cleanly. Pick the
+      # newest Xcode installed on the runner. See dotnet/runtime#124609.
+      - name: 🍎 Use latest Xcode
+        if: runner.os == 'macOS'
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)"
+
+      # NativeAOT on Linux needs a C toolchain + zlib to link the native binary.
+      - name: 🐧 Install NativeAOT prerequisites (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+
+      - name: 📦 Publish (NativeAOT, ${{ matrix.rid }})
+        run: dotnet publish -c Release -r ${{ matrix.rid }} -p:PublishAot=true
+
+      # Collect the single native binary under a per-RID name so the six
+      # matrix uploads don't collide.
+      - name: 🗂️ Stage binary
+        shell: bash
+        run: |
+          out="bin/Release/net10.0/${{ matrix.rid }}/publish"
+          mkdir -p dist
+          if [ -f "$out/dtssh.exe" ]; then
+            cp "$out/dtssh.exe" "dist/dtssh-${{ matrix.rid }}.exe"
+          else
+            cp "$out/dtssh" "dist/dtssh-${{ matrix.rid }}"
+            chmod +x "dist/dtssh-${{ matrix.rid }}"
+          fi
+
+      - name: ⬆️ Upload binary artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: dtssh-${{ matrix.rid }}
+          path: dist/*
+          if-no-files-found: error
