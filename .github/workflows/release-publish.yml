@@ -1,0 +1,144 @@
+name: 🎉 release (publish)
+
+# Runs when a `chore(release): vX` pull request (label `release`) is merged into
+# the default branch. Instead of rebuilding, it reuses the artifacts that
+# build.yml already produced for the merge commit (the push-to-main build run),
+# waiting for that run to finish if it is still in progress. Then it tags the
+# commit and publishes the GitHub Release with changelog-based notes.
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+
+jobs:
+  wait-build:
+    name: ⏳ Wait for build
+    # Only for merged release PRs.
+    if: >-
+      github.event.pull_request.merged == true &&
+      contains(github.event.pull_request.labels.*.name, 'release')
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    outputs:
+      run_id: ${{ steps.find.outputs.run_id }}
+    steps:
+      - name: ⏳ Wait for build.yml to finish on the release commit
+        id: find
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          set -euo pipefail
+          echo "Looking for a build.yml run on $SHA"
+          # Poll for up to ~60 minutes (180 * 20s).
+          for i in $(seq 1 180); do
+            read -r run_id status conclusion < <(
+              gh api "repos/$GITHUB_REPOSITORY/actions/workflows/build.yml/runs?head_sha=$SHA&event=push" \
+                --jq '.workflow_runs[0] // empty | "\(.id) \(.status) \(.conclusion)"'
+            ) || true
+            if [ -z "${run_id:-}" ]; then
+              echo "  ($i) no build run for $SHA yet; waiting…"
+              sleep 20; continue
+            fi
+            echo "  ($i) run $run_id status=$status conclusion=$conclusion"
+            if [ "$status" = "completed" ]; then
+              if [ "$conclusion" = "success" ]; then
+                echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+                echo "Reusing artifacts from build run $run_id"
+                exit 0
+              fi
+              echo "::error::build run $run_id concluded '$conclusion'; not releasing"
+              exit 1
+            fi
+            sleep 20
+          done
+          echo "::error::timed out waiting for a build run on $SHA"
+          exit 1
+
+  tag:
+    name: 🏷️ Tag release
+    needs: wait-build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.info.outputs.tag }}
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0
+
+      - name: 🏷️ Read version and create tag
+        id: info
+        run: |
+          set -euo pipefail
+          ver=$(grep -oP '<Version>\K[0-9]+\.[0-9]+\.[0-9]+(?=</Version>)' Dtssh.csproj)
+          tag="v$ver"
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "::error::tag $tag already exists"; exit 1
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$tag" -m "dtssh $tag"
+          git push origin "$tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+  release:
+    name: 🎉 Publish GitHub release
+    needs: [wait-build, tag]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.tag.outputs.tag }}
+          fetch-depth: 0
+
+      - name: 🧰 Install git-cliff
+        uses: taiki-e/install-action@v2
+        with:
+          tool: git-cliff
+
+      - name: 📝 Generate release notes
+        run: |
+          set -euo pipefail
+          git cliff --config .config/cliff.toml --latest --strip all -o RELEASE_NOTES.md
+          echo "----- RELEASE_NOTES.md -----"
+          cat RELEASE_NOTES.md
+
+      - name: ⬇️ Download built binaries
+        uses: actions/download-artifact@v7
+        with:
+          pattern: dtssh-*
+          path: dist
+          merge-multiple: true
+          run-id: ${{ needs.wait-build.outputs.run_id }}
+          github-token: ${{ github.token }}
+
+      - name: 🔐 Generate checksums
+        working-directory: dist
+        run: |
+          set -euo pipefail
+          ls -la
+          sha256sum dtssh-* > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: 🎉 Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" \
+            dist/dtssh-* dist/SHA256SUMS.txt \
+            --title "dtssh $TAG" \
+            --notes-file RELEASE_NOTES.md \
+            ${{ contains(github.event.pull_request.labels.*.name, 'prerelease') && '--prerelease' || '' }}

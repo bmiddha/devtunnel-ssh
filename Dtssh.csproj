@@ -1,0 +1,79 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Dtssh</RootNamespace>
+    <AssemblyName>dtssh</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+
+    <!-- Release version — the single source of truth. Exposed at runtime via the
+         assembly's InformationalVersion attribute (read in Program.Version). The
+         release workflow (.github/workflows/release.yml) bumps only this. The git
+         short SHA is appended (see SetGitRevision below) => "0.0.0+a1b2c3d4". -->
+    <Version>0.0.0</Version>
+    <!-- We build InformationalVersion ourselves (Version + short git SHA) in the
+         SetGitRevision target, so stop the SDK appending its own full-SHA suffix. -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+
+    <!-- NativeAOT: single small native binary, no runtime dependency.
+         The DevTunnels SDK serializes through the shared TunnelContracts.JsonOptions;
+         DtsshJson (source-gen) is injected into its TypeInfoResolver at startup so
+         reflection-based serialization is never needed. See Json/DtsshJson.cs. -->
+    <PublishAot>true</PublishAot>
+    <StripSymbols>true</StripSymbols>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.DevTunnels.Connections" Version="1.3.50" />
+    <PackageReference Include="Microsoft.DevTunnels.Management" Version="1.3.50" />
+    <PackageReference Include="BouncyCastle.Cryptography" Version="2.4.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Preserve SSH types/ctors activated by reflection under NativeAOT. -->
+    <TrimmerRootDescriptor Include=".config/TrimmerRoots.xml" />
+  </ItemGroup>
+
+  <!-- Set InformationalVersion to "<Version>+<git short SHA>" so Program.Version
+       reports the exact build commit (e.g. "0.0.0+a1b2c3d4"). Best-effort: if git
+       or .git is absent (e.g. building from a source tarball) it no-ops and the
+       version stays the bare <Version>. Runs before the assembly-info generation. -->
+  <Target Name="SetGitRevision" BeforeTargets="GetAssemblyVersion;GenerateAssemblyInfo">
+    <Exec Command="git rev-parse --short=8 HEAD" ConsoleToMSBuild="true"
+          ContinueOnError="true" StandardOutputImportance="Low" StandardErrorImportance="Low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="_GitSha" />
+      <Output TaskParameter="ExitCode" PropertyName="_GitExit" />
+    </Exec>
+    <PropertyGroup Condition="'$(_GitExit)' == '0' and '$(_GitSha)' != ''">
+      <InformationalVersion>$(Version)+$(_GitSha)</InformationalVersion>
+    </PropertyGroup>
+  </Target>
+
+  <!-- .NET 10's Apple crypto PAL (libSystem.Security.Cryptography.Native.Apple.a)
+       is compiled against the *static* Swift stdlib and force-loads the Swift C
+       overlay archives (swift_time, swiftunistd, swift_errno, ...). Under
+       NativeAOT the link step isn't given the Swift static-library search path,
+       so it fails with "Undefined symbols: __swift_FORCE_LOAD_$_swift_*". Point
+       the linker at the active SDK's and toolchain's swift_static dirs (missing
+       -L paths are harmless warnings). See dotnet/runtime#125858. -->
+  <Target Name="AddSwiftLibraryPaths" BeforeTargets="LinkNative"
+          Condition="$([MSBuild]::IsOSPlatform('osx'))">
+    <Exec Command="xcrun --show-sdk-path"
+          ConsoleToMSBuild="true" StandardOutputImportance="Low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="_MacSdkPath" />
+    </Exec>
+    <Exec Command="xcode-select -p"
+          ConsoleToMSBuild="true" StandardOutputImportance="Low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="_XcodeDevDir" />
+    </Exec>
+    <ItemGroup>
+      <LinkerArg Include="-L$(_MacSdkPath)/usr/lib/swift" />
+      <LinkerArg Include="-L$(_MacSdkPath)/usr/lib/swift_static/macosx" />
+      <LinkerArg Include="-L$(_XcodeDevDir)/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift_static/macosx" />
+    </ItemGroup>
+  </Target>
+
+</Project>

@@ -1,0 +1,16 @@
+<svg width="1280" height="640" viewBox="0 0 1280 640" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="dtssh — seamless SSH over Microsoft Dev Tunnels">
+  <title>dtssh — seamless SSH over Microsoft Dev Tunnels</title>
+  <rect width="1280" height="640" fill="#1A1119"/>
+
+  <!-- logo mark -->
+  <g transform="translate(120, 192) scale(2.0)">
+    <path d="M24 99V62a40 40 0 0 1 80 0v37" fill="none" stroke="#F06795" stroke-width="8" stroke-linecap="round"/>
+    <path d="M34 99V62a30 30 0 0 1 60 0v37" fill="none" stroke="#F8A5C2" stroke-width="4" stroke-linecap="round" opacity="0.6"/>
+    <path d="M52 60l10 8-10 8" fill="none" stroke="#FDE7EF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M70 82h12" stroke="#FF8FB3" stroke-width="6" stroke-linecap="round"/>
+  </g>
+
+  <!-- wordmark -->
+  <text x="470" y="322" font-family="'DejaVu Sans Mono','Menlo','Consolas',monospace" font-size="132" font-weight="700" fill="#FDE7EF">dtssh</text>
+  <text x="474" y="392" font-family="'DejaVu Sans','Helvetica',Arial,sans-serif" font-size="33" fill="#F8A5C2">seamless SSH over Microsoft Dev Tunnels</text>
+</svg>

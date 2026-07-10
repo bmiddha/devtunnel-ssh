@@ -1,0 +1,15 @@
+# Binaries
+/dist/
+*.exe
+
+# dtssh runtime state (never commit keys/tokens)
+.dtssh/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+
+# .NET build output
+/bin/
+/obj/
