@@ -55,10 +55,26 @@ if ($Rid -eq 'osx-x64') {
 $exeSuffix = if ($Rid -like 'win-*') { '.exe' } else { '' }
 $binName   = "dtssh$exeSuffix"
 $asset     = "dtssh-$Rid$exeSuffix"
+
+# Resolve "latest" ourselves. GitHub's /releases/latest (and its download
+# shortcut) only point at the newest *stable* release and skip pre-releases, so
+# resolve the newest published tag from the releases list, which includes
+# pre-releases. Then always download from the explicit per-tag asset URL.
+if (-not $env:BASE_URL -and $Version -eq 'latest') {
+    Write-Host "Resolving latest release of $Repo..."
+    $headers = @{ 'User-Agent' = 'dtssh-installer'; 'Accept' = 'application/vnd.github+json' }
+    if ($env:GITHUB_TOKEN) { $headers['Authorization'] = "Bearer $($env:GITHUB_TOKEN)" }
+    try {
+        $rel = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases?per_page=1" -Headers $headers -UseBasicParsing
+    } catch {
+        throw "Could not query releases for $Repo`: $($_.Exception.Message). Set -Version vX.Y.Z explicitly."
+    }
+    $Version = @($rel)[0].tag_name
+    if (-not $Version) { throw "Could not resolve the latest release tag for $Repo. Set -Version vX.Y.Z explicitly." }
+}
+
 $base  = if ($env:BASE_URL) {
     $env:BASE_URL
-} elseif ($Version -eq 'latest') {
-    "https://github.com/$Repo/releases/latest/download"
 } else {
     "https://github.com/$Repo/releases/download/$Version"
 }

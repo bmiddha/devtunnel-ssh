@@ -40,10 +40,28 @@ fi
 
 asset="dtssh-$rid"
 ver="${VERSION:-latest}"
+
+# Resolve "latest" ourselves. GitHub's /releases/latest (and its download
+# shortcut) only point at the newest *stable* release and skip pre-releases, so
+# resolve the newest published tag from the releases list, which includes
+# pre-releases. Then always download from the explicit per-tag asset URL.
+if [ -z "${BASE_URL:-}" ] && [ "$ver" = "latest" ]; then
+  echo "Resolving latest release of $repo..." >&2
+  api="https://api.github.com/repos/$repo/releases?per_page=1"
+  # Capture the response first; piping curl directly into `grep -m1` makes grep
+  # close the pipe early, which trips `set -o pipefail` via curl's write error.
+  releases_json="$(curl -fsSL ${GITHUB_TOKEN:+-H "Authorization: Bearer $GITHUB_TOKEN"} "$api")" || {
+    echo "error: could not query releases from $api." >&2; exit 1; }
+  ver="$(printf '%s\n' "$releases_json" | grep -m1 '"tag_name"' | sed -E 's/.*"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')"
+  if [ -z "$ver" ]; then
+    echo "error: could not resolve the latest release tag from $api." >&2
+    echo "       Set VERSION=vX.Y.Z explicitly, or check that a release exists." >&2
+    exit 1
+  fi
+fi
+
 if [ -n "${BASE_URL:-}" ]; then
   base="$BASE_URL"
-elif [ "$ver" = "latest" ]; then
-  base="https://github.com/$repo/releases/latest/download"
 else
   base="https://github.com/$repo/releases/download/$ver"
 fi
