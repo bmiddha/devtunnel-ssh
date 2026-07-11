@@ -1,23 +1,69 @@
 name: 🎉 release (publish)
 
 # Runs when a `chore(release): vX` pull request (label `release`) is merged into
-# the default branch. Tags the merge commit, builds every platform via
-# build.yml, and publishes the GitHub Release with changelog-based notes.
+# the default branch. Instead of rebuilding, it reuses the artifacts that
+# build.yml already produced for the merge commit (the push-to-main build run),
+# waiting for that run to finish if it is still in progress. Then it tags the
+# commit and publishes the GitHub Release with changelog-based notes.
 on:
   pull_request:
     types: [closed]
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  tag:
-    name: 🏷️ Tag release
+  wait-build:
+    name: ⏳ Wait for build
     # Only for merged release PRs.
     if: >-
       github.event.pull_request.merged == true &&
       contains(github.event.pull_request.labels.*.name, 'release')
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    outputs:
+      run_id: ${{ steps.find.outputs.run_id }}
+    steps:
+      - name: ⏳ Wait for build.yml to finish on the release commit
+        id: find
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          set -euo pipefail
+          echo "Looking for a build.yml run on $SHA"
+          # Poll for up to ~60 minutes (180 * 20s).
+          for i in $(seq 1 180); do
+            read -r run_id status conclusion < <(
+              gh api "repos/$GITHUB_REPOSITORY/actions/workflows/build.yml/runs?head_sha=$SHA&event=push" \
+                --jq '.workflow_runs[0] // empty | "\(.id) \(.status) \(.conclusion)"'
+            ) || true
+            if [ -z "${run_id:-}" ]; then
+              echo "  ($i) no build run for $SHA yet; waiting…"
+              sleep 20; continue
+            fi
+            echo "  ($i) run $run_id status=$status conclusion=$conclusion"
+            if [ "$status" = "completed" ]; then
+              if [ "$conclusion" = "success" ]; then
+                echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+                echo "Reusing artifacts from build run $run_id"
+                exit 0
+              fi
+              echo "::error::build run $run_id concluded '$conclusion'; not releasing"
+              exit 1
+            fi
+            sleep 20
+          done
+          echo "::error::timed out waiting for a build run on $SHA"
+          exit 1
+
+  tag:
+    name: 🏷️ Tag release
+    needs: wait-build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
     outputs:
       tag: ${{ steps.info.outputs.tag }}
     steps:
@@ -42,19 +88,13 @@ jobs:
           git push origin "$tag"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
-  build:
-    name: 🔨 Build binaries
-    needs: tag
-    uses: ./.github/workflows/build.yml
-    with:
-      ref: ${{ needs.tag.outputs.tag }}
-
   release:
     name: 🎉 Publish GitHub release
-    needs: [tag, build]
+    needs: [wait-build, tag]
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: read
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@v7
@@ -80,6 +120,8 @@ jobs:
           pattern: dtssh-*
           path: dist
           merge-multiple: true
+          run-id: ${{ needs.wait-build.outputs.run_id }}
+          github-token: ${{ github.token }}
 
       - name: 🔐 Generate checksums
         working-directory: dist
