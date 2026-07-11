@@ -34,7 +34,7 @@
 
   <ItemGroup>
     <!-- Preserve SSH types/ctors activated by reflection under NativeAOT. -->
-    <TrimmerRootDescriptor Include="TrimmerRoots.xml" />
+    <TrimmerRootDescriptor Include=".config/TrimmerRoots.xml" />
   </ItemGroup>
 
   <!-- Set InformationalVersion to "<Version>+<git short SHA>" so Program.Version

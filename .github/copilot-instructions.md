@@ -23,7 +23,7 @@ setup. It's a single **.NET 10 NativeAOT** CLI (single self-contained binary).
 - All JSON must go through the source-gen `DtsshSerializerContext` (`src/Json/`);
   no reflection-based serialization.
 - The Dev Tunnels SDK isn't AOT-safe by default: its JSON options are patched with
-  a source-gen context, `TrimmerRoots.xml` preserves the SSH assemblies, and
+  a source-gen context, `.config/TrimmerRoots.xml` preserves the SSH assemblies, and
   polymorphic tunnel-endpoint types are explicitly registered. Don't remove these.
 - Expect IL2104/IL3053 trim/AOT warnings from the SDK — those are known, not errors.
 - Build/publish: `dotnet publish -c Release -r <rid> -p:PublishAot=true`.
