@@ -102,6 +102,7 @@ jobs:
     runs-on: windows-2022
     # This protected environment must be created and governed outside this
     # workflow; Homelab provisions its non-secret Azure variables after approval.
+    # Its OIDC subject is immutable: repo:bmiddha@5100938/devtunnel-ssh@1294082231:environment:release.
     environment: release
     permissions:
       actions: read
