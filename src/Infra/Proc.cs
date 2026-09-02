@@ -22,6 +22,7 @@ internal static class Proc
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
+            CreateNoWindow = OperatingSystem.IsWindows(),
         };
         foreach (var a in args) psi.ArgumentList.Add(a);
 
@@ -63,6 +64,7 @@ internal static class Proc
         {
             RedirectStandardError = true,
             UseShellExecute = false,
+            CreateNoWindow = OperatingSystem.IsWindows(),
         };
         foreach (var a in args) psi.ArgumentList.Add(a);
         if (environment is not null)
