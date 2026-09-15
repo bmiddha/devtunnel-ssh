@@ -3,7 +3,16 @@
 All notable changes to this project are documented here. This file is generated
 from [Conventional Commits](https://www.conventionalcommits.org) by
 [git-cliff](https://git-cliff.org).
-## [0.2.1] ([compare](https://github.com/bmiddha/devtunnel-ssh/compare/v0.2.0...v0.2.1)) - 2026-08-31
+## [0.2.2] ([compare](https://github.com/bmiddha/devtunnel-ssh/compare/v0.2.1...v0.2.2)) - 2026-09-15
+
+### 🐛 Bug Fixes
+
+- Reap proxy sessions and hide Windows services ([2f0a200](https://github.com/bmiddha/devtunnel-ssh/commit/2f0a200c48967d662c5487618cdc55f550214246))
+- *(proxy)* Bound setup and reap cancelled helpers ([590a679](https://github.com/bmiddha/devtunnel-ssh/commit/590a67966f7539b281b4b31c5f4259a4556a6087))
+- *(proxy)* Stop when the SSH parent exits ([692fea7](https://github.com/bmiddha/devtunnel-ssh/commit/692fea79bcde11108a27b5753d933dabfbafd379))
+
+
+## [0.2.1] ([compare](https://github.com/bmiddha/devtunnel-ssh/compare/v0.2.0...v0.2.1)) - 2026-09-01
 
 ### 🐛 Bug Fixes
 
