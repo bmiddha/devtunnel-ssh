@@ -11,5 +11,6 @@
 .vscode/
 
 # .NET build output
-/bin/
-/obj/
+**/bin/
+**/obj/
+**/TestResults/

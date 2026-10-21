@@ -33,6 +33,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Remove="tests\**\*.cs" />
     <!-- Preserve SSH types/ctors activated by reflection under NativeAOT. -->
     <TrimmerRootDescriptor Include=".config/TrimmerRoots.xml" />
   </ItemGroup>

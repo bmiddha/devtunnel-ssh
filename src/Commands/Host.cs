@@ -154,20 +154,8 @@ internal static class HostCommand
 
         // 6. Block until interrupted; if the relay host stops on its own, exit
         // non-zero so a supervising service manager restarts us (auto-recovery).
-        var stopping = false;
-        var done = new TaskCompletionSource();
-        void OnSignal(object? _, EventArgs __)
-        {
-            stopping = true;
-            Console.Error.WriteLine("\ndtssh: tunnel host stopped.");
-            cts.Cancel();
-            done.TrySetResult();
-        }
-        Console.CancelKeyPress += (s, e) => { e.Cancel = true; OnSignal(s, e); };
-        AppDomain.CurrentDomain.ProcessExit += OnSignal;
-
-        try { await relayHost.WaitForConnectionAndDisposeAsync(done.Task, cts.Token).ConfigureAwait(false); }
-        catch (OperationCanceledException) { }
+        var stopping = await HostShutdown.WaitForShutdownAsync(
+            relayHost.WaitForConnectionAndDisposeAsync, cts).ConfigureAwait(false);
 
         if (stopping) return 0;
         Console.Error.WriteLine("dtssh: tunnel host exited unexpectedly");
