@@ -98,3 +98,12 @@ single self-contained NativeAOT binary.
 ```bash
 dotnet publish -c Release -r linux-x64 -p:PublishAot=true
 ```
+
+Run the dependency-free host shutdown regression checks with the .NET 10 SDK:
+
+```bash
+dotnet run --project tests/HostShutdown/HostShutdown.csproj -c Release
+```
+
+Each scenario runs in a child process so checks include the real process-exit
+callbacks. No Dev Tunnel, SSH server, or sign-in is needed.
