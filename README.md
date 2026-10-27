@@ -57,9 +57,19 @@ Keep a machine reachable without leaving a terminal open (starts at login,
 auto-restarts, no admin needed):
 
 ```bash
-dtssh service install     # same flags as `dtssh host`
+dtssh service install
+# Or, use a specific tunnel:
+dtssh service install --tunnel <tunnel-id>
+
 dtssh service status      # or: logs, restart, stop, start, uninstall
 ```
+
+Installation accepts similar flags as `host`: `--port`, `--user`, `--alias`,
+  `--tunnel`, `--expiration`, `--system-sshd`,
+  and `--no-wsl-boot` (opts out of the WSL Startup launcher).
+Services always use persistent mode: `--persist` is accepted for compatibility,
+but is redundant. Setting `--persist=false` (or `0`, `no`, or `off`) is rejected.
+Unknown options, unexpected arguments, and missing option values are rejected.
 
 ## Commands
 

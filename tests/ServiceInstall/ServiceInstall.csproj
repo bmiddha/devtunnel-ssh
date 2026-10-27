@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\src\Infra\Flags.cs" Link="Flags.cs" />
+    <Compile Include="..\..\src\Commands\ServiceInstallOptions.cs" Link="ServiceInstallOptions.cs" />
+    <Compile Include="..\..\src\Service\ServiceManager.cs" Link="ServiceManager.cs" />
+    <Compile Include="..\..\src\Infra\Paths.cs" Link="Paths.cs" />
+    <Compile Include="..\..\src\Infra\Proc.cs" Link="Proc.cs" />
+    <Compile Include="..\..\src\Infra\Log.cs" Link="Log.cs" />
+  </ItemGroup>
+</Project>

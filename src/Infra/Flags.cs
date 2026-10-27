@@ -19,17 +19,42 @@ internal sealed class Flags
         return f;
     }
 
-    private void ParseInto(string[] args)
+    public static Flags ParseStrict(string[] args, string[] valueFlags, params string[] boolFlags)
+    {
+        var f = new Flags();
+        foreach (var b in boolFlags) f.boolNames.Add(b);
+        f.ParseInto(args, new HashSet<string>(valueFlags, StringComparer.Ordinal));
+        return f;
+    }
+
+    private static bool IsFlag(string a) =>
+        a.Length >= 2 && a[0] == '-' && !char.IsDigit(a[1]);
+
+    private void ParseInto(string[] args, HashSet<string>? valueNames = null)
     {
         for (int i = 0; i < args.Length; i++)
         {
             var a = args[i];
-            if (a.Length >= 2 && a[0] == '-' && !(a.Length >= 2 && char.IsDigit(a[1])))
+            if (IsFlag(a))
             {
                 var name = a.TrimStart('-');
                 string? inlineVal = null;
                 var eq = name.IndexOf('=');
                 if (eq >= 0) { inlineVal = name[(eq + 1)..]; name = name[..eq]; }
+
+                if (valueNames is not null)
+                {
+                    if (!boolNames.Contains(name) && !valueNames.Contains(name))
+                    {
+                        throw new ArgumentException($"unknown option \"{a}\"");
+                    }
+                    if (valueNames.Contains(name) &&
+                        (inlineVal == "" || (inlineVal is null &&
+                            (i + 1 == args.Length || args[i + 1] == "" || IsFlag(args[i + 1])))))
+                    {
+                        throw new ArgumentException($"--{name} requires a value");
+                    }
+                }
 
                 if (boolNames.Contains(name))
                 {
@@ -50,6 +75,10 @@ internal sealed class Flags
             }
             else
             {
+                if (valueNames is not null)
+                {
+                    throw new ArgumentException($"unexpected argument \"{a}\"");
+                }
                 positionals.Add(a);
             }
         }
