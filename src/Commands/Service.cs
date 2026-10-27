@@ -43,31 +43,15 @@ internal static class ServiceCommand
 
     private static async Task<int> InstallAsync(string[] args)
     {
-        var f = Flags.Parse(args, "system-sshd", "no-wsl-boot");
         if (args.Any(a => a is "-h" or "--help" or "help")) { PrintUsage(); return 0; }
-        var port = f.Int("port", 2222);
-        var loginUser = f.Str("user");
-        var alias = f.Str("alias");
-        var tunnelId = f.Str("tunnel");
-        var expiration = f.Str("expiration");
-        var systemSshd = f.Bool("system-sshd", false);
-        var noWslBoot = f.Bool("no-wsl-boot", false);
+        var options = ServiceInstallOptions.Parse(args);
         var ct = CancellationToken.None;
 
         Paths.EnsureAll();
         _ = await DevtunnelCli.EnsureBinaryAsync(ct).ConfigureAwait(false);
 
-        // Reconstruct the `dtssh host` args. --persist reuses one tunnel + a stable
-        // identity across restarts.
-        var hostArgs = new List<string> { "--persist", "--port", port.ToString() };
-        if (!string.IsNullOrEmpty(loginUser)) { hostArgs.Add("--user"); hostArgs.Add(loginUser); }
-        if (!string.IsNullOrEmpty(alias)) { hostArgs.Add("--alias"); hostArgs.Add(alias); }
-        if (!string.IsNullOrEmpty(tunnelId)) { hostArgs.Add("--tunnel"); hostArgs.Add(tunnelId); }
-        if (!string.IsNullOrEmpty(expiration)) { hostArgs.Add("--expiration"); hostArgs.Add(expiration); }
-        if (systemSshd) hostArgs.Add("--system-sshd");
-
         var m = ServiceManager.New();
-        var cfg = new ServiceConfig(Cli.SelfPath(), hostArgs, ServiceManager.DefaultEnv());
+        var cfg = new ServiceConfig(Cli.SelfPath(), options.HostArgs, ServiceManager.DefaultEnv());
         m.Install(cfg);
         Console.Error.WriteLine($"dtssh: service installed and started ({m.UnitPath()}).");
         Console.Error.WriteLine("dtssh: it will auto-start at login and auto-restart on failure.");
@@ -76,7 +60,7 @@ internal static class ServiceCommand
 
         // A systemd *user* service inside WSL never starts after a Windows reboot
         // until the distro is launched. Register a hidden Windows Startup launcher.
-        if (Wsl.Wsl.IsWsl() && !noWslBoot)
+        if (Wsl.Wsl.IsWsl() && !options.NoWslBoot)
         {
             var distro = Wsl.Wsl.Distro();
             try
@@ -102,8 +86,11 @@ USAGE:
     dtssh service <subcommand> [options]
 
 SUBCOMMANDS:
-    install    Register and start the host service (same flags as `dtssh host`:
-               --port, --user, --alias, --tunnel, --expiration, --system-sshd).
+    install    Register and start the host service. Accepts similar flags
+               as `dtssh host`: --port, --user, --alias, --tunnel, --expiration,
+                                --system-sshd
+               --persist is accepted but redundant; services always persist,
+               setting --persist=false (or 0, no, or off) is rejected.
                Inside WSL it also registers a hidden Windows Startup launcher so
                the distro (and this service) auto-boot at logon; opt out with
                --no-wsl-boot.
@@ -120,6 +107,7 @@ restarts. You must be logged into devtunnel (`dtssh login`).
 
 EXAMPLES:
     dtssh service install --port 2222
+    dtssh service install --persist --tunnel <tunnel-id>
     dtssh service status
     dtssh service uninstall
 

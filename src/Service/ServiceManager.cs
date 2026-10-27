@@ -251,7 +251,7 @@ internal sealed class SchtasksManager : IServiceManager
     {
         Directory.CreateDirectory(Path.GetDirectoryName(ServiceManager.LogPath())!);
         var xmlPath = UnitPath();
-        File.WriteAllText(xmlPath, Render(cfg));
+        WriteXml(xmlPath, cfg);
         try
         {
             Svc.Run("schtasks", "/Create", "/TN", TaskName, "/XML", xmlPath, "/F");
@@ -259,6 +259,9 @@ internal sealed class SchtasksManager : IServiceManager
         }
         finally { try { File.Delete(xmlPath); } catch { } }
     }
+
+    internal static void WriteXml(string path, ServiceConfig cfg) =>
+        File.WriteAllText(path, Render(cfg), Encoding.Unicode /*UTF-16*/);
 
     private static string Render(ServiceConfig cfg)
     {
