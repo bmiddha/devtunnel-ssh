@@ -96,9 +96,166 @@ jobs:
           git push origin "$tag"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
+  sign-and-attest:
+    name: 🔐 Sign and attest release assets
+    needs: [wait-build, tag]
+    runs-on: windows-2022
+    # This protected environment must be created and governed outside this
+    # workflow; Homelab provisions its non-secret Azure variables after approval.
+    # Its OIDC subject is immutable: repo:bmiddha@5100938/devtunnel-ssh@1294082231:environment:release.
+    environment: release
+    permissions:
+      actions: read
+      attestations: write
+      contents: read
+      id-token: write
+    steps:
+      - name: ⬇️ Download Windows binaries
+        uses: actions/download-artifact@v8
+        with:
+          pattern: dtssh-win-*
+          path: unsigned\windows
+          merge-multiple: true
+          run-id: ${{ needs.wait-build.outputs.run_id }}
+          github-token: ${{ github.token }}
+
+      - name: 🔑 Log in to Azure with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: 🔐 Sign Windows binaries with Azure Artifact Signing
+        uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82
+        with:
+          azure-tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          azure-client-id: ${{ vars.AZURE_CLIENT_ID }}
+          endpoint: ${{ vars.AZURE_ARTIFACT_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_ARTIFACT_SIGNING_ACCOUNT_NAME }}
+          certificate-profile-name: ${{ vars.AZURE_ARTIFACT_SIGNING_CERTIFICATE_PROFILE_NAME }}
+          files-folder: ${{ github.workspace }}\unsigned\windows
+          files-folder-filter: "*.exe"
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          exclude-environment-credential: true
+          exclude-workload-identity-credential: true
+          exclude-managed-identity-credential: true
+          exclude-shared-token-cache-credential: true
+          exclude-visual-studio-credential: true
+          exclude-visual-studio-code-credential: true
+          exclude-azure-cli-credential: false
+          exclude-azure-powershell-credential: true
+          exclude-azure-developer-cli-credential: true
+          exclude-interactive-browser-credential: true
+
+      - name: ✅ Verify Windows Authenticode signatures
+        shell: pwsh
+        run: |
+          $signatures = Get-ChildItem unsigned\windows -File -Filter *.exe |
+           Get-AuthenticodeSignature
+          if ($signatures.Count -ne 2 -or ($signatures | Where-Object Status -ne Valid)) {
+           $signatures | Format-Table Path, Status, StatusMessage -AutoSize
+           throw "Expected valid Authenticode signatures on both Windows binaries."
+          }
+
+      - name: ⬇️ Download Linux binaries
+        uses: actions/download-artifact@v8
+        with:
+          pattern: dtssh-linux-*
+          path: unsigned\linux
+          merge-multiple: true
+          run-id: ${{ needs.wait-build.outputs.run_id }}
+          github-token: ${{ github.token }}
+
+      - name: ⬇️ Download macOS binaries
+        uses: actions/download-artifact@v8
+        with:
+          pattern: dtssh-osx-*
+          path: unsigned\macos
+          merge-multiple: true
+          run-id: ${{ needs.wait-build.outputs.run_id }}
+          github-token: ${{ github.token }}
+
+      - name: 🗂️ Assemble final release binaries
+        shell: pwsh
+        run: |
+          $expected = @(
+           "dtssh-linux-x64",
+           "dtssh-linux-arm64",
+           "dtssh-osx-arm64",
+           "dtssh-win-x64.exe",
+           "dtssh-win-arm64.exe"
+          )
+          $sources = @{
+           "dtssh-linux-x64" = "unsigned\linux\dtssh-linux-x64"
+           "dtssh-linux-arm64" = "unsigned\linux\dtssh-linux-arm64"
+           "dtssh-osx-arm64" = "unsigned\macos\dtssh-osx-arm64"
+           "dtssh-win-x64.exe" = "unsigned\windows\dtssh-win-x64.exe"
+           "dtssh-win-arm64.exe" = "unsigned\windows\dtssh-win-arm64.exe"
+          }
+
+          New-Item -ItemType Directory -Force dist | Out-Null
+          foreach ($name in $expected) {
+           if (-not (Test-Path -LiteralPath $sources[$name] -PathType Leaf)) {
+             throw "Expected release binary '$name' was not produced by the build."
+           }
+           Copy-Item -LiteralPath $sources[$name] -Destination "dist\$name"
+          }
+          $expected | Set-Content dist\release-binaries.txt
+
+      - name: 🧰 Install Cosign
+        uses: sigstore/cosign-installer@v3.9.1
+        with:
+          cosign-release: v2.5.2
+
+      - name: 🔏 Create keyless Sigstore signatures
+        shell: pwsh
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          $binaries = Get-Content dist\release-binaries.txt
+          foreach ($name in $binaries) {
+           $file = Join-Path $PWD "dist\$name"
+           & cosign sign-blob --yes `
+             --output-signature "$file.sig" `
+             --output-certificate "$file.pem" `
+             --bundle "$file.bundle" `
+             $file
+           if ($LASTEXITCODE -ne 0) {
+             throw "Cosign failed for '$name'."
+           }
+          }
+
+      - name: 🔐 Generate checksums
+        shell: pwsh
+        run: |
+          $binaries = Get-Content dist\release-binaries.txt
+          $checksums = foreach ($name in $binaries) {
+           $hash = (Get-FileHash -Algorithm SHA256 "dist\$name").Hash.ToLowerInvariant()
+           "$hash  $name"
+          }
+          $checksums | Set-Content dist\SHA256SUMS.txt
+          Get-Content dist\SHA256SUMS.txt
+
+      - name: 📜 Attest final release binaries
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-checksums: dist\SHA256SUMS.txt
+
+      - name: ⬆️ Upload signed release assets
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-assets
+          path: |
+           dist/dtssh-*
+           dist/SHA256SUMS.txt
+          if-no-files-found: error
+
   release:
     name: 🎉 Publish GitHub release
-    needs: [wait-build, tag]
+    needs: [wait-build, tag, sign-and-attest]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -122,22 +279,11 @@ jobs:
           echo "----- RELEASE_NOTES.md -----"
           cat RELEASE_NOTES.md
 
-      - name: ⬇️ Download built binaries
+      - name: ⬇️ Download signed release assets
         uses: actions/download-artifact@v8
         with:
-          pattern: dtssh-*
+          name: release-assets
           path: dist
-          merge-multiple: true
-          run-id: ${{ needs.wait-build.outputs.run_id }}
-          github-token: ${{ github.token }}
-
-      - name: 🔐 Generate checksums
-        working-directory: dist
-        run: |
-          set -euo pipefail
-          ls -la
-          sha256sum dtssh-* > SHA256SUMS.txt
-          cat SHA256SUMS.txt
 
       - name: 🎉 Create GitHub release
         env:
