@@ -8,6 +8,16 @@ name: 🎉 release (publish)
 on:
   pull_request:
     types: [closed]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Notify an existing release tag (empty backfills all published releases; does not publish)."
+        type: string
+        required: false
+      dry_run:
+        description: "Preview notifications without posting comments or labels."
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -150,3 +160,19 @@ jobs:
             --title "dtssh $TAG" \
             --notes-file RELEASE_NOTES.md \
             ${{ contains(github.event.pull_request.labels.*.name, 'prerelease') && '--prerelease' || '' }}
+
+  notify:
+    name: Notify released pull requests
+    needs: [tag, release]
+    if: >-
+      always() &&
+      (github.event_name == 'workflow_dispatch' ||
+       (needs.tag.result == 'success' && needs.release.result == 'success'))
+    permissions:
+      contents: read
+    # Releases created with GITHUB_TOKEN do not emit another workflow run.
+    uses: ./.github/workflows/release-notify.yml
+    secrets: inherit
+    with:
+      tag: ${{ inputs.tag || needs.tag.outputs.tag }}
+      dry_run: ${{ inputs.dry_run || false }}
