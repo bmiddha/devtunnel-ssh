@@ -1,0 +1,81 @@
+name: Release PR notifications
+
+on:
+  release:
+    types: [published]
+  workflow_call:
+    inputs:
+      tag:
+        description: Published release tag to notify.
+        type: string
+        required: false
+      dry_run:
+        description: Preview notifications without writing.
+        type: boolean
+        default: false
+    secrets:
+      RELEASE_APP_ID:
+        required: true
+      RELEASE_APP_PRIVATE_KEY:
+        required: true
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Published release tag (leave empty to backfill all releases)."
+        type: string
+        required: false
+      dry_run:
+        description: "Preview notifications without posting comments or labels."
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-pr-notifications
+  cancel-in-progress: false
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout notification script and release history
+        uses: actions/checkout@v7
+        with:
+          # Old release tags do not necessarily contain the notification script.
+          ref: ${{ github.workflow_sha }}
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "26"
+          cache: npm
+          cache-dependency-path: scripts/package-lock.json
+
+      - name: Install script tooling
+        run: npm ci --prefix scripts
+
+      - name: Typecheck notification script
+        run: npm --prefix scripts run typecheck
+
+      - name: Mint release bot token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: read
+          permission-pull-requests: write
+
+      - name: Notify released pull requests
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
+          DRY_RUN: ${{ inputs.dry_run || false }}
+        run: |
+          args=()
+          if [ -n "$RELEASE_TAG" ]; then args+=(--tag "$RELEASE_TAG"); fi
+          if [ "$DRY_RUN" = "true" ]; then args+=(--dry-run); fi
+          node scripts/notify-release.mts "${args[@]}"
