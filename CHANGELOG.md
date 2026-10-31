@@ -3,6 +3,14 @@
 All notable changes to this project are documented here. This file is generated
 from [Conventional Commits](https://www.conventionalcommits.org) by
 [git-cliff](https://git-cliff.org).
+## [0.2.3] ([compare](https://github.com/bmiddha/devtunnel-ssh/compare/v0.2.2...v0.2.3)) - 2026-10-31
+
+### 🐛 Bug Fixes
+
+- Clean up host shutdown handlers ([36167d7](https://github.com/bmiddha/devtunnel-ssh/commit/36167d7e3251d78c91af92c0da51fc0875ee4ef0))
+- *(service)* Preserve tunnel ID parameter and fix task description encoding ([ea87b7e](https://github.com/bmiddha/devtunnel-ssh/commit/ea87b7e52185f157a31cdf66d236eba368ea6821))
+
+
 ## [0.2.2] ([compare](https://github.com/bmiddha/devtunnel-ssh/compare/v0.2.1...v0.2.2)) - 2026-09-15
 
 ### 🐛 Bug Fixes
