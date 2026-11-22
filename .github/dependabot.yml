@@ -1,0 +1,20 @@
+version: 2
+
+# Renovate handles scheduled version updates. The zero PR limit disables
+# Dependabot version PRs but does not apply to security PRs.
+updates:
+  - package-ecosystem: nuget
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    commit-message:
+      prefix: "chore(deps)"
